@@ -1,142 +1,150 @@
 import joblib
 import pandas as pd
 import numpy as np
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, render_template
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score, roc_auc_score,
+    confusion_matrix
+)
 
-# --- Inisialisasi Aplikasi Flask ---
 app = Flask(__name__)
 
-# --- Lokasi Model dan Data ---
+# --- File Path ---
 RF_MODEL_PATH = 'random_forest_diabetes_model.joblib'
 KNN_MODEL_PATH = 'knn_diabetes_model.joblib'
-SCALER_PATH = 'standard_scaler_diabetes.joblib' # Path untuk StandardScaler
+SCALER_PATH = 'standard_scaler_diabetes.joblib'
 DATA_PATH = 'diabetes.csv'
 
-# --- Load Model Random Forest ---
+# --- Load Model ---
 try:
     loaded_rf_model = joblib.load(RF_MODEL_PATH)
-    print(f"Model Random Forest '{RF_MODEL_PATH}' berhasil dimuat.")
-except FileNotFoundError:
-    print(f"ERROR: Model Random Forest '{RF_MODEL_PATH}' tidak ditemukan. Pastikan file model ada.")
-    exit()
-
-# --- Load Model KNN dan Scaler ---
-try:
     loaded_knn_model = joblib.load(KNN_MODEL_PATH)
-    loaded_scaler = joblib.load(SCALER_PATH) # Muat scaler
-    print(f"Model KNN '{KNN_MODEL_PATH}' dan Scaler '{SCALER_PATH}' berhasil dimuat.")
-except FileNotFoundError:
-    print(f"ERROR: Model KNN '{KNN_MODEL_PATH}' atau Scaler '{SCALER_PATH}' tidak ditemukan. Pastikan file ada.")
+    loaded_scaler = joblib.load(SCALER_PATH)
+    print("Model RF, KNN, dan scaler berhasil dimuat.")
+except FileNotFoundError as e:
+    print(f"File tidak ditemukan: {e}")
     exit()
 
-# --- Median untuk Imputasi (Sama seperti saat pelatihan) ---
-# PENTING: Nilai median ini HARUS berasal dari data *pelatihan*
-# yang digunakan untuk melatih model Anda. Ini bisa dihitung sekali dan di-hardcode,
-# atau disimpan bersama model. Untuk demo ini, kita akan hitung dari dataset asli lagi.
-# Dalam aplikasi nyata, lebih baik menyimpan ini secara terpisah atau bersama model.
+# --- Evaluasi RANDOM FOREST (tanpa hapus outlier, dengan imputasi median) ---
 try:
-    temp_df_for_medians = pd.read_csv(DATA_PATH)
-    cols_to_impute = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI']
-    for col in cols_to_impute:
-        temp_df_for_medians[col] = temp_df_for_medians[col].replace(0, np.nan)
-    
-    # Simpan median ke dalam dictionary
-    MEDIANS = {col: temp_df_for_medians[col].median() for col in cols_to_impute}
-    # Dapatkan urutan kolom yang diharapkan dari dataset asli (tanpa 'Outcome')
-    EXPECTED_COLUMNS = temp_df_for_medians.drop('Outcome', axis=1).columns.tolist()
-    print("Median untuk imputasi dan urutan kolom diharapkan berhasil dihitung/didapat.")
-except FileNotFoundError:
-    print(f"ERROR: '{DATA_PATH}' tidak ditemukan. Median tidak dapat dihitung dan tabel tidak dapat ditampilkan.")
-    exit()
+    rf_data = pd.read_csv(DATA_PATH)
+    rf_cols_to_impute = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI']
+    for col in rf_cols_to_impute:
+        rf_data[col] = rf_data[col].replace(0, np.nan)
+        rf_data[col].fillna(rf_data[col].median(), inplace=True)
 
-# --- Fungsi Preprocessing ---
-def preprocess_input(data_dict):
-    """
-    Melakukan preprocessing pada data input dari form.
-    Menerima dictionary, mengembalikan DataFrame yang siap diprediksi (belum discale untuk KNN).
-    """
-    df_input = pd.DataFrame([data_dict])
-    
-    # Pastikan semua kolom numerik yang mungkin memiliki 0 diubah menjadi NaN
-    for col in MEDIANS.keys():
-        df_input[col] = df_input[col].replace(0, np.nan)
-        # Imputasi NaN dengan median yang sudah dihitung
-        df_input[col].fillna(MEDIANS[col], inplace=True)
-        
-    # Pastikan urutan kolom sesuai dengan saat model dilatih
-    # Ini penting agar model menerima input dalam urutan yang benar
-    return df_input[EXPECTED_COLUMNS]
+    X_rf = rf_data.drop('Outcome', axis=1)
+    y_rf = rf_data['Outcome']
+    _, X_test_rf, _, y_test_rf = train_test_split(X_rf, y_rf, test_size=0.2, random_state=42, stratify=y_rf)
 
-# --- Route untuk Halaman Utama (Home Page - Informasi Saja) ---
+    y_pred_rf = loaded_rf_model.predict(X_test_rf)
+    y_proba_rf = loaded_rf_model.predict_proba(X_test_rf)[:, 1]
+
+    rf_metrics = {
+        'accuracy': accuracy_score(y_test_rf, y_pred_rf),
+        'precision': precision_score(y_test_rf, y_pred_rf),
+        'recall': recall_score(y_test_rf, y_pred_rf),
+        'f1_score': f1_score(y_test_rf, y_pred_rf),
+        'roc_auc': roc_auc_score(y_test_rf, y_proba_rf)
+    }
+except Exception as e:
+    print(f"Gagal evaluasi Random Forest: {e}")
+    rf_metrics = None
+
+# --- Evaluasi KNN (hapus outlier, tidak imputasi, discale) ---
+try:
+    knn_data = pd.read_csv(DATA_PATH)
+    Q1 = knn_data.quantile(0.25)
+    Q3 = knn_data.quantile(0.75)
+    IQR = Q3 - Q1
+    knn_data = knn_data[~((knn_data < (Q1 - 1.5 * IQR)) | (knn_data > (Q3 + 1.5 * IQR))).any(axis=1)]
+
+    X_knn = knn_data.drop('Outcome', axis=1)
+    y_knn = knn_data['Outcome']
+    _, X_test_knn, _, y_test_knn = train_test_split(X_knn, y_knn, test_size=0.2, random_state=42)
+
+    X_test_knn_scaled = loaded_scaler.transform(X_test_knn)
+    y_pred_knn = loaded_knn_model.predict(X_test_knn_scaled)
+    y_proba_knn = loaded_knn_model.predict_proba(X_test_knn_scaled)[:, 1]
+
+    knn_metrics = {
+        'accuracy': accuracy_score(y_test_knn, y_pred_knn),
+        'precision': precision_score(y_test_knn, y_pred_knn),
+        'recall': recall_score(y_test_knn, y_pred_knn),
+        'f1_score': f1_score(y_test_knn, y_pred_knn),
+        'roc_auc': roc_auc_score(y_test_knn, y_proba_knn)
+    }
+except Exception as e:
+    print(f"Gagal evaluasi KNN: {e}")
+    knn_metrics = None
+
+# --- Preprocessing Input untuk Prediksi ---
+def preprocess_input(data_dict, use_imputation=False):
+    df = pd.DataFrame([data_dict])
+    if use_imputation:
+        for col in ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI']:
+            df[col] = df[col].replace(0, np.nan)
+            df[col].fillna(df[col].median(), inplace=True)
+    return df
+
+# --- Routes ---
 @app.route('/')
 def home():
     return render_template('home.html')
 
-# --- Route untuk Halaman Prediksi (Form Input dan Hasil) ---
 @app.route('/predict_page')
 def predict_page():
     return render_template('predict.html')
 
-# --- Route untuk Memproses Prediksi (Ketika Form Disubmit) ---
 @app.route('/predict', methods=['POST'])
 def predict():
-    if request.method == 'POST':
-        # Mengambil data dari form
-        try:
-            data = {
-                'Pregnancies': int(request.form['Pregnancies']),
-                'Glucose': int(request.form['Glucose']),
-                'BloodPressure': int(request.form['BloodPressure']),
-                'SkinThickness': int(request.form['SkinThickness']),
-                'Insulin': int(request.form['Insulin']),
-                'BMI': float(request.form['BMI']),
-                'DiabetesPedigreeFunction': float(request.form['DiabetesPedigreeFunction']),
-                'Age': int(request.form['Age'])
-            }
-        except ValueError:
-            return render_template('predict.html', error_message="Input tidak valid. Pastikan semua kolom diisi dengan angka.")
+    try:
+        data = {
+            'Pregnancies': int(request.form['Pregnancies']),
+            'Glucose': int(request.form['Glucose']),
+            'BloodPressure': int(request.form['BloodPressure']),
+            'SkinThickness': int(request.form['SkinThickness']),
+            'Insulin': int(request.form['Insulin']),
+            'BMI': float(request.form['BMI']),
+            'DiabetesPedigreeFunction': float(request.form['DiabetesPedigreeFunction']),
+            'Age': int(request.form['Age'])
+        }
+    except ValueError:
+        return render_template('predict.html', error_message="Input tidak valid.")
 
-        # Preprocess data input (unscaled)
-        processed_data_unscaled = preprocess_input(data)
+    # --- Prediksi Random Forest (pakai imputasi) ---
+    input_rf = preprocess_input(data, use_imputation=True)
+    rf_pred = loaded_rf_model.predict(input_rf)[0]
+    rf_proba = loaded_rf_model.predict_proba(input_rf)[:, 1][0]
+    rf_result = "Diabetes" if rf_pred == 1 else "Tidak Diabetes"
 
-        # --- Prediksi dengan Random Forest ---
-        rf_prediction = loaded_rf_model.predict(processed_data_unscaled)[0]
-        rf_proba = loaded_rf_model.predict_proba(processed_data_unscaled)[:, 1][0]
-        
-        rf_result = "Diabetes" if rf_prediction == 1 else "Tidak Diabetes"
-        rf_confidence = f"Probabilitas Diabetes: {rf_proba:.2%}"
+    # --- Prediksi KNN (tanpa imputasi, tapi discale) ---
+    input_knn = preprocess_input(data, use_imputation=False)
+    input_knn_scaled = loaded_scaler.transform(input_knn)
+    knn_pred = loaded_knn_model.predict(input_knn_scaled)[0]
+    knn_proba = loaded_knn_model.predict_proba(input_knn_scaled)[:, 1][0]
+    knn_result = "Diabetes" if knn_pred == 1 else "Tidak Diabetes"
 
-        # --- Prediksi dengan KNN ---
-        # Data harus discale untuk KNN menggunakan scaler yang sudah dimuat
-        processed_data_scaled = loaded_scaler.transform(processed_data_unscaled)
-        
-        knn_prediction = loaded_knn_model.predict(processed_data_scaled)[0]
-        knn_proba = loaded_knn_model.predict_proba(processed_data_scaled)[:, 1][0]
-        
-        knn_result = "Diabetes" if knn_prediction == 1 else "Tidak Diabetes"
-        knn_confidence = f"Probabilitas Diabetes: {knn_proba:.2%}"
+    return render_template('predict.html',
+        rf_prediction_text=f"Random Forest: {rf_result}",
+        rf_confidence_text=f"Probabilitas: {rf_proba:.2%}",
+        knn_prediction_text=f"K-Nearest Neighbors: {knn_result}",
+        knn_confidence_text=f"Probabilitas: {knn_proba:.2%}"
+    )
 
-        # Kembali ke halaman prediksi dengan hasil dari kedua model
-        return render_template('predict.html', 
-                               rf_prediction_text=f"Random Forest: {rf_result}", 
-                               rf_confidence_text=rf_confidence,
-                               knn_prediction_text=f"K-Nearest Neighbors: {knn_result}", 
-                               knn_confidence_text=knn_confidence)
-
-# --- Route untuk Menampilkan Tabel Data ---
 @app.route('/table')
 def show_table():
     try:
-        # Baca dataset asli
-        df_full = pd.read_csv(DATA_PATH)
-        # Konversi DataFrame ke HTML table
-        # .to_html() akan menghasilkan string HTML dari DataFrame
-        # .head(20) untuk hanya menampilkan 20 baris pertama agar tidak terlalu panjang
-        diabetes_table_html = df_full.head(15).to_html(classes='data-table', index=False)
-        return render_template('table.html', diabetes_table=diabetes_table_html)
+        df = pd.read_csv(DATA_PATH)
+        table_html = df.head(20).to_html(classes='data-table', index=False)
+        return render_template('table.html', diabetes_table=table_html)
     except FileNotFoundError:
-        return render_template('table.html', diabetes_table="<p style='text-align:center; color:red;'>Error: File 'diabetes.csv' tidak ditemukan.</p>")
+        return render_template('table.html', diabetes_table="<p style='color:red;'>Data tidak ditemukan.</p>")
 
-# --- Jalankan Aplikasi Flask ---
+@app.route('/models')
+def show_model_performance():
+    return render_template('models.html', rf_metrics=rf_metrics, knn_metrics=knn_metrics)
+
 if __name__ == '__main__':
     app.run(debug=True)

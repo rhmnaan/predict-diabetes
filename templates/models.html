@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kinerja Model - Prediksi Risiko Diabetes</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-100">
+
+  <!-- Navbar -->
+  <nav class="bg-gray-800 shadow-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4">
+      <div class="flex justify-center py-4">
+        <ul class="flex gap-10 text-white font-medium text-lg">
+          <li><a href="/" class="hover:text-green-400 transition">Home</a></li>
+          <li><a href="/predict_page" class="hover:text-green-400 transition">Prediksi</a></li>
+          <li><a href="/table" class="hover:text-green-400 transition">Tabel Data</a></li>
+          <li><a href="/models" class="hover:text-green-400 transition">Models</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Konten Utama -->
+  <div class="max-w-6xl mx-auto px-4 py-10 space-y-8">
+
+    <!-- Header -->
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-8 shadow-lg">
+      <h1 class="text-3xl font-extrabold text-green-400 text-center mb-4">Kinerja Model Prediksi Diabetes</h1>
+      <p class="text-center text-gray-400">Perbandingan performa model <span class="font-semibold text-white">Random Forest</span> dan <span class="font-semibold text-white">K-Nearest Neighbors</span> pada dataset uji.</p>
+    </div>
+
+    {% if rf_metrics and knn_metrics %}
+
+    <!-- Perbandingan Model -->
+    <div class="flex flex-col md:flex-row gap-6 justify-center">
+
+      <!-- Kartu RF -->
+      <div class="flex-1 bg-gray-800 border border-gray-700 rounded-xl p-6 shadow-md hover:shadow-xl transition duration-300">
+        <h3 class="text-2xl font-bold text-center text-green-400 border-b border-gray-600 pb-3 mb-4">Random Forest</h3>
+        <ul class="space-y-3 text-gray-300">
+          <li class="flex justify-between"><span>Akurasi:</span><strong class="text-blue-400">{{ "%.4f" | format(rf_metrics.accuracy) }}</strong></li>
+          <li class="flex justify-between"><span>Presisi:</span><strong class="text-blue-400">{{ "%.4f" | format(rf_metrics.precision) }}</strong></li>
+          <li class="flex justify-between"><span>Recall:</span><strong class="text-blue-400">{{ "%.4f" | format(rf_metrics.recall) }}</strong></li>
+          <li class="flex justify-between"><span>F1-Score:</span><strong class="text-blue-400">{{ "%.4f" | format(rf_metrics.f1_score) }}</strong></li>
+          <li class="flex justify-between"><span>ROC AUC:</span><strong class="text-blue-400">{{ "%.4f" | format(rf_metrics.roc_auc) }}</strong></li>
+        </ul>
+      </div>
+
+      <!-- Kartu KNN -->
+      <div class="flex-1 bg-gray-800 border border-gray-700 rounded-xl p-6 shadow-md hover:shadow-xl transition duration-300">
+        <h3 class="text-2xl font-bold text-center text-green-400 border-b border-gray-600 pb-3 mb-4">K-Nearest Neighbors</h3>
+        <ul class="space-y-3 text-gray-300">
+          <li class="flex justify-between"><span>Akurasi:</span><strong class="text-blue-400">{{ "%.4f" | format(knn_metrics.accuracy) }}</strong></li>
+          <li class="flex justify-between"><span>Presisi:</span><strong class="text-blue-400">{{ "%.4f" | format(knn_metrics.precision) }}</strong></li>
+          <li class="flex justify-between"><span>Recall:</span><strong class="text-blue-400">{{ "%.4f" | format(knn_metrics.recall) }}</strong></li>
+          <li class="flex justify-between"><span>F1-Score:</span><strong class="text-blue-400">{{ "%.4f" | format(knn_metrics.f1_score) }}</strong></li>
+          <li class="flex justify-between"><span>ROC AUC:</span><strong class="text-blue-400">{{ "%.4f" | format(knn_metrics.roc_auc) }}</strong></li>
+        </ul>
+      </div>
+
+    </div>
+
+    <!-- Kesimpulan -->
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 shadow-md">
+      <h2 class="text-2xl font-bold text-green-400 text-center mb-4">Analisis Singkat</h2>
+      <p class="text-gray-300 mb-3">
+        Dari perbandingan di atas:
+        <br><span class="font-semibold">Akurasi:</span> {{ "Random Forest" if rf_metrics.accuracy > knn_metrics.accuracy else "K-Nearest Neighbors" }} memiliki akurasi lebih tinggi.
+        <br><span class="font-semibold">Presisi:</span> {{ "Random Forest" if rf_metrics.precision > knn_metrics.precision else "K-Nearest Neighbors" }} menunjukkan presisi lebih baik.
+        <br><span class="font-semibold">Recall:</span> {{ "Random Forest" if rf_metrics.recall > knn_metrics.recall else "K-Nearest Neighbors" }} lebih baik dalam mengenali kasus positif.
+        <br><span class="font-semibold">F1-Score:</span> {{ "Random Forest" if rf_metrics.f1_score > knn_metrics.f1_score else "K-Nearest Neighbors" }} menunjukkan keseimbangan presisi dan recall yang lebih baik.
+        <br><span class="font-semibold">ROC AUC:</span> {{ "Random Forest" if rf_metrics.roc_auc > knn_metrics.roc_auc else "K-Nearest Neighbors" }} memiliki kemampuan klasifikasi yang lebih baik secara keseluruhan.
+      </p>
+      <p class="text-gray-400 italic">
+        Catatan: Dalam konteks medis, model dengan <span class="text-green-400 font-semibold">Recall tinggi</span> sering diutamakan untuk meminimalkan False Negatives.
+      </p>
+    </div>
+
+    {% else %}
+    <!-- Error -->
+    <div class="bg-red-100 border border-red-400 text-red-700 px-6 py-4 rounded-lg text-center shadow-md">
+      <p class="font-semibold">Data kinerja model tidak tersedia.</p>
+      <p>Pastikan file model dan dataset telah dimuat dengan benar.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</body>
+</html>
