@@ -146,5 +146,5 @@ def show_table():
 def show_model_performance():
     return render_template('models.html', rf_metrics=rf_metrics, knn_metrics=knn_metrics)
 
-if __name__ == '__main__':
-    app.run(debug=True)
+# if __name__ == '__main__':
+#     app.run(debug=True)
